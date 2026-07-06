@@ -295,6 +295,8 @@ Client receives {"id":10,"name":"Priya","email":"priya@example.com"}
 
 32.
 ```java
+32.
+```java
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -304,4 +306,45 @@ public class ProductDto {
     private double price;
     // internalCostCode is intentionally excluded
 }
+```
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** Two controller methods are mapped `@GetMapping("/students/{id}")` and `@GetMapping("/students/active")`. What actually happens for a request to `/students/active`, and how do you make this unambiguous?
+
+> **Answer:** Spring MVC ranks route matches by specificity — a literal path segment (`active`) is more specific than a path-variable pattern (`{id}`), so `/students/active` correctly routes to the literal mapping. The real danger is declaring the specific route in a DIFFERENT controller class processed later, or relying on implicit ordering. The safe, explicit fix is to constrain the variable's format: `@GetMapping("/students/{id:[0-9]+}")`, and always declare literal/specific routes before generic parameterized ones in the same class.
+
+**F2.** What is content negotiation, and how does Spring MVC decide whether to return JSON or XML from the SAME endpoint?
+
+> **Answer:** Content negotiation selects the response representation based on the client's `Accept` header (or a path suffix / query param, depending on configured strategy). Spring's `ContentNegotiationManager` checks configured strategies in order and picks the first registered `HttpMessageConverter` able to produce that media type. With both `jackson-databind` (JSON) and `jackson-dataformat-xml` (XML) on the classpath, the same method can serve `Accept: application/json` or `Accept: application/xml` clients differently, with zero extra code.
+
+**F3.** A client receives `HTTP 406 Not Acceptable`. What causes this, and how do you fix it?
+
+> **Answer:** 406 occurs when the client's `Accept` header requests a media type that NONE of the registered `HttpMessageConverter`s can produce (e.g., requesting XML when only Jackson JSON is on the classpath). Fix by adding the missing converter dependency, ensuring clients send a supported `Accept` header, or configuring `ContentNegotiationConfigurer.defaultContentType(MediaType.APPLICATION_JSON)` as a fallback.
+
+**F4.** How does Jackson serialize a `LocalDateTime` field by default in a Spring Boot app, and what makes it output clean ISO-8601 instead of a numeric array?
+
+> **Answer:** Vanilla Jackson doesn't understand `java.time` types out of the box and would fail or emit a numeric array. Spring Boot auto-configures the `jackson-datatype-jsr310` module (bundled transitively), registering proper serializers. Combined with `spring.jackson.serialization.write-dates-as-timestamps=false` (Boot's default, unlike raw Jackson which defaults to epoch-millis timestamps), `LocalDateTime` serializes as `"2025-03-15T10:00:00"`.
+
+**F5.** What is `HandlerInterceptor.afterCompletion()` for, and why can't a simple `try/finally` in the controller replace it?
+
+> **Answer:** `afterCompletion()` runs after the ENTIRE request-response cycle completes, regardless of whether an exception occurred — it still fires (for interceptors whose `preHandle` already succeeded) even if a LATER interceptor blocks the request or the controller is never reached at all. A `try/finally` inside a controller method can't cover cases where the controller method never executes in the first place.
+
+**F6.** Why does a plain `@Controller` method returning `ResponseEntity<T>` still return raw JSON WITHOUT needing `@ResponseBody`, even though the class isn't `@RestController`?
+
+> **Answer:** Spring MVC's `HttpEntityMethodProcessor` special-cases `ResponseEntity`/`HttpEntity` return types — returning a full `ResponseEntity` unambiguously means "this IS the raw HTTP response," so it's ALWAYS written directly to the body regardless of `@ResponseBody` presence, distinguishing it from a String return value (which would normally be treated as a view name on a plain `@Controller`).
+
+**F7.** A teammate implements business validation logic inside a custom `HandlerInterceptor`. Why is this the wrong layer, and where should it live instead?
+
+> **Answer:** `HandlerInterceptor` runs before the controller method executes but is meant for cross-cutting REQUEST-level concerns (auth checks, locale, simple header validation) — not domain/business rules, which depend on parsed request bodies. Business validation belongs in the Service layer (with `@Valid` + Bean Validation handling structural/format checks at the Controller boundary). Business rules hidden in interceptors are invisible to OpenAPI/Swagger docs and harder to unit test in isolation.
+
+**F8.** What mechanism converts `@PathVariable Long id` from the URL string `"42"` to a `Long`, and what happens if a client sends `"abc"` instead?
+
+> **Answer:** Spring's `ConversionService` (backed by registered `Converter`/`PropertyEditor` implementations) performs type conversion during argument resolution, BEFORE the controller method body runs. An invalid value like `"abc"` throws `MethodArgumentTypeMismatchException`, which by default results in `400 Bad Request` — entirely within `DispatcherServlet`'s argument-resolution phase, never reaching your method.
+
+````
 ```

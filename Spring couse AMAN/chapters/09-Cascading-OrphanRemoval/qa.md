@@ -483,3 +483,43 @@
 **E8.** When `CascadeType.PERSIST` is set on a `@OneToOne`, Hibernate will insert the child entity if it is in transient state when the parent is saved.
 
 > **Answer:** True — CascadeType.PERSIST propagates the persist (insert) operation from parent to child. The child is inserted first, its generated ID is then stored as FK in the parent.
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** You have `cascade = CascadeType.ALL` AND `orphanRemoval = true` on the SAME `@OneToMany`. Is this redundant?
+
+> **Answer:** Not fully. `CascadeType.ALL` (its `REMOVE`) handles "parent deleted → delete all children." `orphanRemoval = true` handles a DIFFERENT case: "child removed from the parent's collection while the parent STILL EXISTS" (e.g., `patient.getAppointments().remove(appt)`) — `CascadeType.REMOVE` alone would NOT delete that orphan. Using both together is the correct pattern for "child cannot exist outside the parent's collection."
+
+**F2.** What is the "helper method" pattern for bidirectional relationships with cascade + orphanRemoval, and what bug does it prevent?
+
+> **Answer:** Instead of callers manually setting BOTH sides separately (easy to forget one), add symmetric methods on the parent: `addAppointment()` (adds to the collection AND sets the child's back-reference) and `removeAppointment()` (removes from the collection AND nulls the back-reference). This guarantees both sides of the relationship stay in sync, preventing the classic bug where only one side is updated — either the in-memory graph is stale, or the DB FK never changes.
+
+**F3.** Why can removing an item from a Hibernate-managed `List` inside a `for-each` loop throw `ConcurrentModificationException`, and how does `orphanRemoval` make this easier to trigger accidentally?
+
+> **Answer:** Removing from a collection mid-iteration with a standard `for-each` (using an `Iterator` internally) throws `ConcurrentModificationException` because the modification count changes during iteration — a plain Java collections issue, but especially easy to hit when writing orphanRemoval-triggering cleanup logic (e.g., "remove all appointments older than X"). Fix: use `Iterator.remove()`, `collection.removeIf(predicate)`, or iterate over a defensive copy.
+
+**F4.** A `@Transactional` method partially updates several entities, then throws near the end. Does `orphanRemoval`'s DELETE get rolled back too?
+
+> **Answer:** Yes — the ENTIRE transaction rolls back, including any SQL Hibernate already flushed earlier in the SAME transaction (e.g., an auto-flush before a mid-method query). Rollback operates at the database transaction level, not at the ORM/dirty-checking level, so cascaded/orphan-triggered DELETEs are undone along with everything else.
+
+**F5.** Why is `cascade = CascadeType.ALL` dangerous on a `@ManyToMany` like `Department.doctors`?
+
+> **Answer:** `CascadeType.REMOVE` (included in `ALL`) would attempt to cascade-delete every `Doctor` in a deleted department's set — but doctors are typically SHARED across multiple departments in a many-to-many. This could delete a doctor still needed by OTHER departments, corrupting data well beyond the department being deleted. `@ManyToMany` almost never warrants `CascadeType.REMOVE`; at most `PERSIST`/`MERGE`.
+
+**F6.** How would you test with `@DataJpaTest` that removing an Appointment from a Patient's collection actually deletes it from the DB, not just the in-memory list?
+
+> **Answer:** Persist a patient with one appointment, capture its ID, remove it from the collection, call `saveAndFlush()`, then `entityManager.clear()` (via `TestEntityManager`) to force a fresh DB read, and assert `appointmentRepository.findById(apptId)` is empty — proving the row is gone from the DB, not just absent from a stale in-memory reference.
+
+**F7.** What happens if `Patient.insurance` only has `cascade = CascadeType.PERSIST` (no `MERGE`), and you try to UPDATE an existing patient's insurance details?
+
+> **Answer:** `PERSIST` only handles "parent saved for the FIRST TIME with a new child." Updating an EXISTING patient's insurance without `MERGE` means Hibernate does NOT propagate the update automatically — changes may silently not save, or (if a NEW transient Insurance is assigned) throw `TransientPropertyValueException` on flush. The practical rule: cascade both `PERSIST` and `MERGE` together for lifecycle-following relationships.
+
+**F8.** In a microservices architecture, why can't you simply "cascade" a delete across service boundaries (e.g., Patient Service deleting a patient should clean up Billing Service records)?
+
+> **Answer:** JPA cascading only works within a SINGLE database/persistence context managed by ONE `EntityManager` — it has zero visibility into another service's database. Cross-service cleanup needs either synchronous calls (with Saga/compensating-transaction logic, since there's no true distributed ACID transaction) or asynchronous event-driven cleanup (publish a `PatientDeletedEvent`; Billing Service consumes it and cleans up independently, accepting eventual consistency).
+
+```

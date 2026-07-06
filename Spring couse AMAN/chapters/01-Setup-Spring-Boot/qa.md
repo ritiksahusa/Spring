@@ -229,3 +229,43 @@ Explain why Tomcat starts automatically, and what they could do if they only wan
 28. Whitelabel
 29. resources
 30. **⌘ + ;** (Mac) / **Ctrl + ;** (Windows/Linux)
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** Spring Boot produces a "fat/uber JAR". How does its internal structure differ from a normal JAR, and how does the JVM actually run classes nested inside another JAR (which a plain `java -cp` cannot do)?
+
+> **Answer:** A Spring Boot fat JAR contains `BOOT-INF/classes` (your compiled classes), `BOOT-INF/lib` (all dependency JARs, un-extracted), and `org/springframework/boot/loader/*` (Spring Boot's own loader classes). A standard JVM classloader cannot load classes from a JAR nested inside another JAR, so Spring Boot bundles a custom `LaunchedURLClassLoader` and a `JarLauncher` (declared as `Main-Class` in `MANIFEST.MF`). Running `java -jar app.jar` actually starts `JarLauncher` first, which builds a classloader capable of reading nested JARs, and only then invokes your real `main()` method (recorded as `Start-Class` in the manifest).
+
+**F2.** Two Spring Boot apps try to bind to port 8080 on the same machine. What actually happens, and how do you make the port dynamic for parallel integration tests?
+
+> **Answer:** The second app fails at startup with `BindException: Address already in use` while embedded Tomcat opens its server socket — this is a fatal startup exception that prevents the `ApplicationContext` from refreshing, not a runtime error. For dynamic ports (common in tests), set `server.port=0` so the OS assigns a free ephemeral port, retrievable via `@LocalServerPort private int port;` inside a `@SpringBootTest(webEnvironment = RANDOM_PORT)` test.
+
+**F3.** Why is the PostgreSQL JDBC driver dependency marked with `<scope>runtime</scope>`, and what does that scope actually change?
+
+> **Answer:** `runtime` scope means the dependency is needed to RUN the app but not to COMPILE it — your code never directly calls `org.postgresql.Driver`; JDBC's `DriverManager` loads it reflectively via the Service Provider Interface. Marking it `runtime` keeps the compile-time classpath leaner and documents intent: it's a pluggable implementation detail, not an API your code depends on directly.
+
+**F4.** What is the actual precedence order when the same property (e.g., `spring.datasource.url`) is set in `application.properties`, an OS environment variable, AND a command-line argument?
+
+> **Answer:** Command-line arguments win first, followed by environment variables, followed by profile-specific `application-{profile}.properties`, followed by the base `application.properties`. This layered precedence is exactly what lets a packaged JAR be reused unmodified across environments — e.g., Kubernetes overrides `SPRING_DATASOURCE_URL` as an env var without rebuilding the image.
+
+**F5.** If you exclude `spring-boot-starter-tomcat` but forget to add any other web server starter (Jetty/Undertow), what happens when you run the app?
+
+> **Answer:** Spring Boot still detects `spring-boot-starter-web` on the classpath and expects a Servlet web `ApplicationContext`, but finds no `ServletWebServerFactory` bean (no embedded container implementation present). It throws `ApplicationContextException: Unable to start ServletWebServerApplicationContext due to missing ServletWebServerFactory bean` at startup — a fail-fast error, not a silent fallback.
+
+**F6.** How does `SpringApplication.run()` decide whether to bootstrap a Servlet, Reactive, or plain (non-web) `ApplicationContext`?
+
+> **Answer:** It inspects the classpath via `WebApplicationType.deduceFromClasspath()`: if `DispatcherHandler` (WebFlux) is present AND `DispatcherServlet` (Servlet MVC) is absent → REACTIVE; if neither is present → NONE (plain CLI app); otherwise → SERVLET. This is why having BOTH `spring-boot-starter-web` and `spring-boot-starter-webflux` on the classpath together defaults to a Servlet app unless you explicitly call `SpringApplication.setWebApplicationType(...)`.
+
+**F7.** Why isn't `mvn clean package` alone enough to produce a runnable Spring Boot JAR, and what plugin actually makes it runnable?
+
+> **Answer:** Plain `mvn package` produces a *thin* JAR — just your compiled classes, like any ordinary Java library, with no `Main-Class`/`Start-Class` manifest wiring and no bundled dependencies. The `spring-boot-maven-plugin`'s `repackage` goal (bound to the `package` phase by the Spring Initializr POM) repackages that thin JAR into the runnable fat/uber JAR with the nested `BOOT-INF` structure and Spring Boot's `Launcher` classes. Skip/exclude this plugin and `java -jar` fails with `NoClassDefFoundError`.
+
+**F8.** Your team wants sub-100ms cold starts for a Spring Boot 3 service on Kubernetes. What two Java 21 / Spring Boot 3 features would you evaluate, and what's the trade-off of each?
+
+> **Answer:** (1) **GraalVM Native Image** (via `spring-boot:build-image` / `native-maven-plugin`) compiles ahead-of-time to a native binary — near-instant startup (tens of ms) and lower memory, at the cost of longer build times and reflection/proxy configuration overhead (`reflect-config.json`). (2) **AppCDS/CDS**, which Spring Boot 3.3+ can auto-generate, caches JVM class metadata to speed up normal JIT-mode startup without going fully native. Native image gives the biggest win but the steepest compatibility tax; CDS is a safer incremental improvement.
+
+````

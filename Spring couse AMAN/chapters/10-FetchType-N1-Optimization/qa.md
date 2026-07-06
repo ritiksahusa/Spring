@@ -464,3 +464,43 @@
 **E8.** Using DTO projections can reduce both data transfer and ORM hydration overhead.
 
 > **Answer:** True.
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** What's the difference between JPA's `FetchType` and Hibernate's `@Fetch(FetchMode...)` — why do engineers say "FetchType defines WHEN, FetchMode defines HOW"?
+
+> **Answer:** `FetchType` (JPA spec) is a hint about WHEN data loads (immediately vs on-access) but doesn't mandate HOW the SQL is generated. Hibernate's `@Fetch(FetchMode.JOIN | SELECT | SUBSELECT)` controls the actual SQL STRATEGY: `JOIN` = one query with SQL JOIN, `SELECT` = one query per parent (classic N+1, default for lazy), `SUBSELECT` = one extra query fetching ALL children for ALL loaded parents via a subselect — solving N+1 with just 2 total queries. You can combine `FetchType.LAZY` (WHEN) with `@Fetch(FetchMode.SUBSELECT)` (HOW).
+
+**F2.** What is `@BatchSize`, and how does it solve N+1 WITHOUT using `JOIN FETCH`?
+
+> **Answer:** `@BatchSize(size = 10)` batches lazy-association loading: instead of one query per parent, it loads associations for up to 10 parents at once via `WHERE parent_id IN (?,?,...)`. For 100 patients, instead of 100 queries you get ~10 batched queries — without risking `MultipleBagFetchException` from simultaneous `JOIN FETCH`es. Can also be set globally via `hibernate.default_batch_fetch_size`.
+
+**F3.** Why can't you paginate correctly with `JOIN FETCH` on a `@OneToMany`, and what's the "two-query" pattern that solves BOTH pagination and N+1?
+
+> **Answer:** Joining a one-to-many multiplies result rows, so SQL `LIMIT`/`OFFSET` can't cut cleanly at the parent level — Hibernate falls back to in-memory pagination (loading everything first), defeating the purpose. Fix: Query 1 fetches just the page of parent IDs (no fetch join, accurate pagination); Query 2 fetches full data for exactly those IDs with `JOIN FETCH ... WHERE id IN :ids`. Correct pagination AND no N+1, at the cost of 2 queries.
+
+**F4.** What tool would you add to CI to catch N+1 regressions automatically, before they reach production?
+
+> **Answer:** `datasource-proxy` or Hypersistence Utils' query-count assertions wired into `@DataJpaTest`s, failing the build if a code change silently adds extra queries. In production, `hibernate.generate_statistics=true` plus APM tooling (Datadog, New Relic) can alert on abnormal query-per-request counts.
+
+**F5.** How does `spring.jpa.open-in-view=true` (Spring Boot's default) explain why N+1 problems often "hide" in dev but appear suddenly in production?
+
+> **Answer:** With Open-Session-In-View, lazy associations can be accessed ANYWHERE during the request (even accidentally, in JSON serialization walking the object graph) and "just work" by lazily issuing more queries — masking N+1 entirely in small-scale dev/functional testing. At real production scale (hundreds of parent rows vs 2-3 test rows), those invisible extra queries multiply into visible latency/DB load problems.
+
+**F6.** How would you shape both the query AND the response for a `Patient` with nested `Appointments` (each with a `Doctor` summary), avoiding both the fetch-join pagination trap and over-exposing data?
+
+> **Answer:** Use a DTO projection with a separate mapping step, not `JOIN FETCH` against full entities: run the two-query (ID-then-enrich) or Set-based fetch-join pattern to load raw entities efficiently, then map into a `PatientResponseDto` with a nested `List<AppointmentSummaryDto>` (itself embedding just `doctorName`/`appointmentTime`) — avoiding exposing full entity graphs and keeping payload minimal and purpose-built.
+
+**F7.** A nested `JOIN FETCH` query (`p.appointments` then `a.doctor`) still shows duplicate rows even after JPQL `DISTINCT`. Why?
+
+> **Answer:** JPQL `DISTINCT` deduplicates at the entity level (collapsing duplicate `Patient` objects with the same ID after hydration). But with a SECOND level of fan-out (appointments→doctor), genuinely duplicate rows can persist at deeper nesting in older Hibernate versions (pre-Hibernate 6 sometimes needed `hibernate.query.passDistinctThrough=false`). Hibernate 6+ handles this better, but it's important to verify actual returned collection sizes in a test whenever nesting more than one level of fetch joins.
+
+**F8.** Why is "always use `FetchType.LAZY` everywhere" NOT a complete N+1 solution by itself?
+
+> **Answer:** `LAZY` only guarantees data isn't loaded until accessed — it does nothing to prevent N+1 once you DO access it in a loop (`for (Patient p : findAll()) { p.getAppointments().size(); }` still triggers 1+N queries). Laziness just moves WHEN the N+1 happens (load time → access time); it doesn't eliminate the pattern. True fixes require query-level strategies: `JOIN FETCH`, `@EntityGraph`, `@BatchSize`/`SUBSELECT`, or DTO projections.
+
+```

@@ -530,3 +530,43 @@
 **E8.** The `mappedBy` attribute value is case-sensitive and must exactly match the Java field name in the owning entity.
 
 > **Answer:** True — if the field is `insurance`, `mappedBy = "insurance"` not `"Insurance"` or `"INSURANCE"`.
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** What is `MultipleBagFetchException`, and how does it relate to `List` vs `Set` for `@OneToMany`/`@ManyToMany`?
+
+> **Answer:** If an entity has TWO OR MORE `List`-typed collections ("bags" in Hibernate terms) that are BOTH eagerly join-fetched in the same query, Hibernate can't cartesian-join two bags unambiguously and throws `MultipleBagFetchException`. Fixes: change one/both to `Set` (Hibernate CAN join-fetch multiple Sets with `DISTINCT`), fetch them in separate queries, or use `@BatchSize` instead.
+
+**F2.** Why is `Set` generally preferred over `List` for `@ManyToMany`, beyond just avoiding `MultipleBagFetchException`?
+
+> **Answer:** `List` requires Hibernate to track POSITION, so removing an element from the middle can trigger DELETE-then-REINSERT of ALL subsequent rows to preserve index order — an expensive surprise. `Set` has no positional semantics, so removing one element deletes just that one join-table row. Use `@OrderColumn` on a `List` only when true ordering is genuinely required.
+
+**F3.** How do you model a self-referencing hierarchy (an `Employee` with one `Manager`, who is also an `Employee`, plus a `List<Employee> directReports`)?
+
+> **Answer:** A self-referencing `@ManyToOne`/`@OneToMany` pair on the SAME entity: `manager` field with `@ManyToOne @JoinColumn(name="manager_id")` (owning side), and `directReports` with `@OneToMany(mappedBy = "manager")` (inverse side) — functionally identical to any other bidirectional 1:N mapping, just pointing to the same entity class on both ends.
+
+**F4.** What is `@MapsId`, and when would you use it instead of a normal `@OneToOne` with its own generated `@Id`?
+
+> **Answer:** `@MapsId` implements a shared primary key association — the child's `@Id` IS the same value as the parent's `@Id` (no separate FK column). Common for "extension table" patterns (e.g., `EmployeeProfile.id` literally equals `Employee.id`), guaranteeing true 1:1 cardinality at the schema level and saving a column.
+
+**F5.** What are the two annotation-based approaches for a composite (multi-column) primary key in JPA?
+
+> **Answer:** (1) `@EmbeddedId` — a separate `@Embeddable` class holding the composite fields, referenced as the entity's single `@Id` field. (2) `@IdClass` — a plain class mirroring the entity's individually `@Id`-annotated fields (matching names/types), used by Hibernate for identity without embedding. `@EmbeddedId` is generally preferred for its object-oriented reusability.
+
+**F6.** Why might you deliberately keep a mapping UNIDIRECTIONAL even when bidirectional navigation "might be useful someday"?
+
+> **Answer:** Bidirectional mappings add complexity — both sides must stay consistent in application code, they increase infinite-recursion/`MultipleBagFetchException` risk, and couple two entities more tightly. YAGNI applies: if the inverse navigation is never actually queried, adding it is pure complexity with no benefit. Add it only when a concrete use case requires navigating from the inverse side.
+
+**F7.** What SQL-level bug can occur if you forget `@OrderBy` on a `List`-typed `@OneToMany`, and application code assumes a specific order?
+
+> **Answer:** Without `@OrderBy`, collection iteration order is UNDEFINED (dependent on physical storage/query planner, not insertion order) and can change unpredictably. Code assuming `appointments.get(0)` is "the first/most recent" is a latent bug that may pass in dev (small, stable data) and fail in production. Fix: explicit `@OrderBy("appointmentTime DESC")`, or sort at the query level.
+
+**F8.** A `@ManyToMany` relationship needs an extra attribute on the relationship itself (e.g., `assignedDate`). Can plain `@ManyToMany` express this?
+
+> **Answer:** No — plain `@ManyToMany` only supports a simple join table with the two FK columns. The fix is to "promote" the join table to its own entity (e.g., `DepartmentDoctorAssignment`) with `@ManyToOne` to both sides PLUS the extra columns — converting one `@ManyToMany` into two `@OneToMany`/`@ManyToOne` pairs through an explicit join entity, a common real-world modeling upgrade.
+
+```

@@ -294,3 +294,43 @@ Set `app.env=dev` or `app.env=prod` in `application.properties` to switch.
 33. **False** — It only scans the root package and its sub-packages.
 34. **False** — Auto-configuration beans are created **conditionally** — only when their conditions are met.
 35. **True** — Constructor injection is the recommended and preferred approach.
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** How does Spring resolve circular dependencies between two singleton beans using field/setter injection, and why does the SAME circular dependency fail with constructor injection?
+
+> **Answer:** Spring uses a 3-level cache during singleton creation: `singletonObjects` (fully initialized beans), `earlySingletonObjects` (raw, not-yet-populated instances), and `singletonFactories` (`ObjectFactory` references for beans currently under construction). When Bean A needs Bean B mid-construction, Spring exposes an early, not-fully-populated reference of A to satisfy B, then finishes populating A afterward. This only works because the bean instance already exists (via a no-arg constructor) before dependencies are set. Constructor injection requires ALL dependencies to exist BEFORE the object itself can be instantiated — there is no "early reference" to hand out, so Spring throws `BeanCurrentlyInCreationException`.
+
+**F2.** What is the real difference between `BeanFactory` and `ApplicationContext`, and why does Spring Boot always use the latter?
+
+> **Answer:** `BeanFactory` is the minimal root IoC container — lazy instantiation, no built-in AOP/events/i18n/environment support. `ApplicationContext` extends it and adds eager singleton pre-instantiation (fail-fast at startup), `ApplicationEventPublisher`, `MessageSource` (i18n), the `Environment` abstraction (profiles/properties), and automatic `BeanPostProcessor` registration. Spring Boot's auto-configuration, profiles, and embedded-server lifecycle all depend on these features, so it always bootstraps a concrete `ApplicationContext`.
+
+**F3.** Why can't a `@Transactional` method calling ANOTHER `@Transactional` method on `this` (self-invocation) actually trigger a new transaction, and how does this relate to JDK dynamic proxies vs CGLIB?
+
+> **Answer:** Spring AOP is proxy-based — Spring wraps your bean in a proxy (JDK dynamic proxy if it implements an interface, otherwise a CGLIB subclass). The proxy intercepts calls made FROM OUTSIDE through the injected reference (which is actually the proxy). A self-invocation (`this.otherMethod()`) bypasses the proxy entirely, so no AOP advice (transactions, caching, security) applies. Fix: inject the bean into itself via `@Lazy` self-injection, or move the method to a separate collaborator bean.
+
+**F4.** What determines whether Spring uses a JDK dynamic proxy or CGLIB for a `@Service`, and what silent failure can occur with CGLIB?
+
+> **Answer:** By default, Spring uses a JDK dynamic proxy if the target implements an interface, otherwise CGLIB. Spring Boot's default (`spring.aop.proxy-target-class=true`) actually forces CGLIB even for interface-implementing beans, for consistency. CGLIB proxies cannot subclass `final` classes or override `final` methods — a common silent-failure gotcha where `@Transactional` on a `final` method does absolutely nothing, with no compile or startup error.
+
+**F5.** When would you use `@Lazy` on a bean, and what guarantee do you lose by using it?
+
+> **Answer:** `@Lazy` defers instantiation until first use — useful for breaking circular-dependency deadlocks, reducing startup cost for rarely-used heavy beans, or optional feature-flagged integrations. The trade-off: you lose Spring Boot's "fail fast" guarantee. A misconfigured lazy bean's error only surfaces on first use (potentially mid-request in production) instead of at deploy time.
+
+**F6.** What's the actual difference between a Spring "bean definition" and a "bean instance"?
+
+> **Answer:** A `BeanDefinition` is metadata (class name, scope, constructor args, init/destroy method names) registered during component scanning / `@Configuration` processing — no objects exist yet. A bean instance is the actual object later created from that definition. This is why `BeanFactoryPostProcessor`s (which modify `BeanDefinition`s, e.g., property placeholder resolution) run BEFORE any bean is instantiated, while `BeanPostProcessor`s operate on already-created objects.
+
+**F7.** If you inject `PaymentService` as `List<PaymentService>` instead of a single bean when two implementations exist, what happens — and why is this often the BETTER design choice?
+
+> **Answer:** No exception — Spring injects ALL matching beans into the list (ordered via `@Order`/`Ordered` if present). This is the recommended Strategy-pattern approach: iterate the list and pick the implementation whose `supports(type)` returns true, instead of juggling `@Qualifier` strings scattered across the codebase whenever a new payment provider is added.
+
+**F8.** A teammate adds `@ConditionalOnMissingBean` expecting their custom bean to act as an overridable "default." What's the classic ordering bug that can break this?
+
+> **Answer:** `@ConditionalOnMissingBean` only evaluates against beans ALREADY registered at the point that configuration class is processed. Between TWO auto-configurations (or auto-config vs. user config) racing to register the "default" bean, processing order determines the outcome. Spring Boot guarantees user `@Configuration` classes are generally evaluated before auto-configurations matching `@ConditionalOnMissingBean`, but between multiple auto-configurations, explicit `@AutoConfigureOrder`/`@AutoConfiguration(before/after = ...)` is required, or bean selection becomes non-deterministic.
+
+````

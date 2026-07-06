@@ -489,3 +489,43 @@
 **E8.** `findByNameContaining("anuj")` and `findByNameLike("%anuj%")` produce equivalent SQL.
 
 > **Answer:** True — both generate `WHERE name LIKE '%anuj%'`, but `Containing` adds `%` automatically while `Like` requires manual `%` placement.
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** Why does deep OFFSET pagination (`PageRequest.of(10000, 20)`) get progressively slower as the page number grows, and what's the standard fix?
+
+> **Answer:** `OFFSET 200000 LIMIT 20` forces the DB to scan and discard 200,000 rows before returning the next 20 — cost grows linearly with offset. The fix is **keyset/cursor (seek) pagination**: filter `WHERE id > :lastSeenId ORDER BY id LIMIT 20` on an indexed column instead of using `OFFSET`, so the DB jumps directly to the right spot regardless of depth.
+
+**F2.** What's the difference between `Page<T>` and `Slice<T>`, and when would you prefer `Slice`?
+
+> **Answer:** `Page<T>` runs an extra `COUNT(*)` query for `getTotalElements()`/`getTotalPages()`, which can be expensive on large tables. `Slice<T>` skips the count query and only exposes `hasNext()` (by fetching `pageSize + 1` rows internally). Prefer `Slice` for infinite-scroll UIs that don't need an exact total.
+
+**F3.** How would you implement a dynamic search endpoint with many optional filters WITHOUT writing a combinatorial explosion of derived query methods?
+
+> **Answer:** Use the Specification API (`JpaSpecificationExecutor<T>`), composing `Predicate`s only for non-null filters (`Specification.where(...).and(...)`), or Querydsl for a type-safe fluent builder — both compose WHERE clauses dynamically at runtime instead of hard-coding every filter permutation as a separate `findByXAndY...` method.
+
+**F4.** Your `@Query` combines `JOIN FETCH` with `Pageable`. What warning/problem occurs, and why?
+
+> **Answer:** Hibernate can't apply SQL-level `LIMIT`/`OFFSET` correctly when a `@OneToMany` collection is eagerly joined in the same query (the join multiplies rows). Hibernate either warns and paginates IN MEMORY (loading the entire result set before slicing — risking OOM) or throws outright. Fix: paginate a query returning only parent IDs, then run a SEPARATE `JOIN FETCH ... WHERE id IN (:ids)` query to enrich just that page (the "two-step" pattern).
+
+**F5.** What's the difference between a JPQL/interface-based Projection and `@EntityGraph`?
+
+> **Answer:** A Projection changes WHAT COLUMNS are selected (narrower `SELECT`, less data transfer). `@EntityGraph` changes HOW ASSOCIATIONS are fetched for a specific query (turning a normally-LAZY relation into join-fetched, without altering the entity's default `FetchType`) but still returns the FULL entity shape. Use Projections for summarized/read-only views; use `@EntityGraph` when you need the full entity graph with per-query N+1 control.
+
+**F6.** At what point should a team migrate away from derived query methods, and to what alternatives?
+
+> **Answer:** When method names get long/fragile (multiple `And`/`Or` conditions, hard to read or refactor safely) or logic needs slight variations across call sites. Migrate to `@Query` with explicit JPQL for clarity, the Specification API for truly dynamic/optional filters, or Querydsl for compile-time-safe complex queries.
+
+**F7.** Why might you need an explicit `countQuery` alongside `@Query` + `Pageable` instead of letting Spring Data derive it automatically?
+
+> **Answer:** For complex JPQL (GROUP BY, multiple joins, DISTINCT), Spring Data's auto-derived count query (naively wrapping your SELECT) can be inefficient or semantically wrong. An explicit, simpler `countQuery` (e.g., `SELECT COUNT(p.id) FROM Patient p WHERE ...`) directly improves `Page<T>`'s total-count performance.
+
+**F8.** How would you PROVE, in an automated test, that a repository method issues exactly one SQL query — before merging a PR?
+
+> **Answer:** Use a SQL-statement-counting library like `datasource-proxy` or Hypersistence Utils' `SQLStatementCountValidator` inside a `@DataJpaTest`, asserting `assertSelectCount(1)`. This turns "no N+1 regression" into an enforceable automated test assertion rather than a manual code-review checklist item.
+
+```

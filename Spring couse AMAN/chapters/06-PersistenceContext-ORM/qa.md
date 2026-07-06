@@ -411,3 +411,43 @@ This makes Spring wait until Hibernate has fully initialised (tables created) be
 **47.** `defer-datasource-initialization=true` is needed when using `data.sql` with JPA entities so that tables are created before the SQL runs. **True**
 
 **48.** A Detached entity can be re-attached to a PersistenceContext using `save()` or `merge()`. **True**
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** What's the actual behavioral difference between `entityManager.persist(entity)` and `entityManager.merge(entity)` on a DETACHED entity (has a non-null ID)?
+
+> **Answer:** `persist()` on a detached entity throws `PersistentObjectException` ("detached entity passed to persist") — `persist` is strictly for TRANSIENT (new) entities. `merge()` is designed for exactly this case: it copies the detached object's field values onto the corresponding MANAGED entity (loading it if necessary) and RETURNS that managed instance — a classic gotcha is that `em.merge(detached) != detached`; you must use the returned reference, not the one you passed in.
+
+**F2.** Why is putting Lombok's `@Data` directly on a bidirectional `@Entity` dangerous?
+
+> **Answer:** `@Data` generates `equals()`/`hashCode()`/`toString()` using ALL fields, including relationships. On bidirectional mappings this causes infinite recursion (`Patient.toString()` → `Insurance.toString()` → `Patient.toString()`... → `StackOverflowError`) and subtle `equals`/`hashCode` bugs with Hibernate proxies (a lazy proxy's hashCode can differ from the fully-loaded entity's, breaking `HashSet`/`HashMap` semantics mid-collection). Best practice: use individual `@Getter`/`@Setter`, exclude relationship fields from `@ToString`/`@EqualsAndHashCode`, and never base identity on a mutable, nullable-before-persist `id`.
+
+**F3.** What is the safest way to implement `equals()`/`hashCode()` on a JPA entity, and why is using the auto-generated `id` alone risky?
+
+> **Answer:** A transient entity has `id == null`, so two DIFFERENT transient entities would incorrectly appear "equal" if compared naively. Worse, adding a transient entity to a `HashSet` and THEN persisting it changes its hashCode (null → generated value), corrupting the set's bucket placement. A common safe pattern: assign a `UUID` in the entity's constructor (stable, non-null even before persist) and base `equals`/`hashCode` on that instead of the DB-generated `id`.
+
+**F4.** What's the difference between `flush()` and `commit()`, and when does a `SELECT` query trigger an automatic flush you never explicitly requested?
+
+> **Answer:** `flush()` synchronizes in-memory changes to the DB (executes pending SQL) WITHOUT ending the transaction — visible within the same transaction, not yet permanent/external. `commit()` ends the transaction, making changes permanent. With `FlushMode.AUTO` (default), Hibernate auto-flushes BEFORE a JPQL/Criteria query if it might be affected by pending changes — e.g., save a new Patient, then immediately `findByName(...)` in the same transaction; Hibernate flushes first so the query can see the pending row.
+
+**F5.** Why does calling `findById(id)` twice in one `@Transactional` method issue only ONE SQL query, but calling `findByName(name)` twice issues TWO — even for the same row?
+
+> **Answer:** `findById()` maps to `EntityManager.find()`, which checks the L1 cache's identity map by primary key BEFORE hitting the DB — a true cache hit skips SQL entirely. `findByName()` always executes a `SELECT ... WHERE name = ?` against the database (Hibernate can't know in advance the row is already cached) — though once fetched, if the primary key is already in the L1 cache, the SAME managed instance is returned, the SQL round-trip still happens both times.
+
+**F6.** What does `spring.jpa.open-in-view=true` (Spring Boot's default) actually do, and why do senior engineers often explicitly disable it?
+
+> **Answer:** It keeps the Hibernate session/connection open for the ENTIRE HTTP request, letting lazy collections be accessed anywhere (even the view layer) without `LazyInitializationException`. The downside: it silently masks N+1 problems (lazy loads "just work" everywhere, hiding bad query design), holds DB connections open longer than necessary, and blurs transaction boundaries. Most production teams set `spring.jpa.open-in-view=false` and enforce explicit `@Transactional` service boundaries plus DTOs/fetch-joins.
+
+**F7.** You mix a raw native SQL reporting query with JPA-managed writes in the SAME transaction. What ordering bug should you watch for?
+
+> **Answer:** Native queries via `createNativeQuery(...)` bypass Hibernate's dirty-checking and don't reliably auto-flush pending JPA changes first. Forgetting an explicit `em.flush()` before the native query means it can read STALE data (changes not yet flushed to the DB) — a subtle bug that only appears when native queries and entity saves are mixed within one transaction.
+
+**F8.** How would you stream millions of rows for a reporting job WITHOUT loading everything into memory or blowing up the PersistenceContext?
+
+> **Answer:** Use a streaming repository method (`Stream<Patient>` return type with `@QueryHints(@QueryHint(name = HINT_FETCH_SIZE, value = "50"))`, wrapped in `@Transactional` to keep the DB cursor open) combined with periodic `entityManager.clear()` to detach processed entities — preventing the L1 cache from growing unbounded, a classic `OutOfMemoryError` cause when iterating huge result sets while every entity stays managed.
+
+````

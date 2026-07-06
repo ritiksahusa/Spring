@@ -25,6 +25,8 @@
 | 10 | FetchType and N+1 Query Optimization | `chapters/10-FetchType-N1-Optimization/` | [x] | [x] | [x] | ✅ |
 
 | S1 | Interview Supplement (gaps not in course) | `INTERVIEW-SUPPLEMENT.md` | — | [x] | — | ✅ |
+| S2 | Per-chapter "Part F" advanced/real-world interview Q&A (8 Q&A × 10 chapters) | `chapters/*/qa.md` | — | — | [x] | ✅ |
+| S3 | Spring Mastery Roadmap (Security, Microservices, Reactive, Kafka, Observability, Docker/CI-CD, System Design, Virtual Threads, etc.) | `SPRING-MASTERY-ROADMAP.md` | — | [x] | — | ✅ |
 
 ---
 
@@ -42,3 +44,10 @@
 - Notes are in **English** (content translated/paraphrased from Hindi transcript)
 - Code blocks use Java with Spring Boot context
 - QA file structure: Short-answer → MCQ → Scenario / code-reading questions → all with answers
+- Each `qa.md` also ends with **Part F — 🚀 Advanced / Real-World Interview Questions**: 8
+  senior/product-company-level curveball Q&A per chapter, going beyond the transcript's content
+- `SPRING-MASTERY-ROADMAP.md` is the "next level" after `INTERVIEW-SUPPLEMENT.md` — covers
+  Security, Microservices/Cloud, Reactive/WebFlux, Kafka/Messaging, Scheduling/Async, Auditing,
+  OpenAPI, Design Patterns, Redis Caching, CORS, Rate Limiting, HATEOAS, Observability, Docker/
+  CI-CD, System Design, Concurrency/Virtual Threads, Testcontainers, and Spring Boot 3/Java 21
+  modern features — ends with a Section 21 self-assessment checklist + suggested study order

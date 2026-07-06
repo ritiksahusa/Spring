@@ -370,3 +370,43 @@ ModelMapper creates a new instance of the destination class using reflection. To
 **47.** `PATCH` is always preferable to `PUT` because it sends less data. **False** — both are valid for different use cases; `PUT` is used for full replacement, `PATCH` for partial updates.
 
 **48.** `@Configuration` is a specialised stereotype annotation that tells Spring the class contains `@Bean` method definitions. **True**
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** Why is `PUT` considered idempotent but `POST` is not, and how does this affect retry logic for flaky mobile clients?
+
+> **Answer:** Idempotent means calling the same request N times produces the same end-state as calling it once. `PUT /students/5` with the same body always leaves student 5 with those exact values. `POST /students` creates a NEW resource every time, so retrying after a network timeout (client unsure if the first attempt succeeded) can create duplicates. This is why safe retries typically use PUT, or POST is paired with a client-generated **idempotency key** stored server-side to detect and reject duplicate submissions.
+
+**F2.** Your auto-incrementing `Long id` is exposed directly in the public API (`/api/students/42`). What's the security concern, and how do you mitigate it?
+
+> **Answer:** This is an Insecure Direct Object Reference (IDOR) / enumeration risk — attackers can iterate IDs to scrape all records or infer business metrics like signup rate. Mitigate by using `GenerationType.UUID` for externally-exposed identifiers, always enforcing authorization checks (does THIS user own record 42?) rather than relying on ID obscurity, and optionally keeping an internal sequential PK for DB performance plus a separate public-facing UUID/slug for API exposure.
+
+**F3.** HikariCP's default pool size is 10. How do you determine the "correct" pool size for production, and why is "just make it bigger" wrong?
+
+> **Answer:** The well-known formula ties pool size to CPU cores and disk parallelism (`connections ≈ (core_count × 2) + effective_spindle_count`), NOT to concurrent HTTP request count. Oversized pools cause MORE context switching and lock contention on the DB server, actually reducing throughput, while consuming more DB-side memory per idle connection. The right approach: start small, load test, and watch DB-side saturation and latency percentiles instead of guessing a large number.
+
+**F4.** How would you detect and prevent a "lost update" when two users PATCH the same Student concurrently, without using DB row locks?
+
+> **Answer:** Use optimistic concurrency: include a `version` (or `updatedAt`/`ETag`) in the GET response; require the client to send it back on update; if the current DB version doesn't match, return `409 Conflict` (or `412 Precondition Failed` for `If-Match`) instead of silently overwriting. This maps directly to JPA's `@Version` field under the hood.
+
+**F5.** Why is `204 No Content` preferred over `200 OK` for a successful `DELETE`, and when might `200 OK` still be justified?
+
+> **Answer:** `204 No Content` explicitly signals "operation succeeded, no body to expect," which is the REST-conventional default for pure deletes. `200 OK` with a body is justified when clients need the deleted object's data back (e.g., for optimistic UI updates showing "you deleted X") — but this must be a deliberate API design choice, not a default.
+
+**F6.** Why does `ddl-auto=update` behave unpredictably when THREE replicas of the same Spring Boot app start simultaneously against the same database?
+
+> **Answer:** Each instance independently runs schema-diffing/DDL logic on startup. Concurrent instances can race on `ALTER TABLE`/`CREATE TABLE` (duplicate index creation attempts, one instance querying a half-migrated table while another alters it), causing intermittent startup failures or lock contention. This is why production systems run a SINGLE controlled migration step (Flyway/Liquibase, e.g., as a deploy-time init step) and set `ddl-auto=validate`/`none` on the actual running application instances.
+
+**F7.** A client sends an unexpected extra JSON field (e.g., `"isAdmin": true`) that isn't part of your DTO. What does Jackson do by default, and why is disciplined DTO design more important than strict unknown-property rejection?
+
+> **Answer:** Spring Boot's Jackson auto-config silently ignores unknown properties by default (lenient client compatibility). The real mass-assignment risk isn't about strictness — it's DTO scope: if a "full" DTO happens to contain privileged fields (like `role`) and is reused across both admin and public creation endpoints, a client could set fields they shouldn't. The fix is disciplined, narrowly-scoped request DTOs per use case, never reusing an overly broad DTO for both trusted and untrusted callers.
+
+**F8.** You're asked to add "soft delete" to Student. What JPA-level implications does this have for existing `findAll()`/unique constraints, and how do you implement it cleanly?
+
+> **Answer:** Every query must now implicitly filter `deleted = false`, or soft-deleted rows reappear and can violate uniqueness (e.g., re-registering an email "held" by a deleted row). Hibernate's `@SQLRestriction` (formerly `@Where`) auto-appends a `deleted = false` filter to ALL queries against that entity, and `@SQLDelete` converts `deleteById()` into an `UPDATE ... SET deleted = true` instead of a physical delete. Unique constraints need to become partial/conditional indexes (e.g., Postgres `WHERE deleted = false`), and any raw/native query bypassing entity-level filtering needs manual handling.
+
+````

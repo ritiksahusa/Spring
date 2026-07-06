@@ -403,3 +403,43 @@ Hibernate generates the DDL automatically from the entity. The `@GeneratedValue(
 **47.** `@Repository` annotation is mandatory on a `JpaRepository` interface. **False** — it is optional; Spring Data JPA auto-detects the interface.
 
 **48.** JDBC is used by Hibernate internally to communicate with the database. **True**
+
+---
+
+## Part F — 🚀 Advanced / Real-World Interview Questions (Product-Company Level)
+
+> These go beyond the transcript — the kind of follow-up/curveball questions asked at senior or product-company interviews.
+
+**F1.** How would you validate that `password` and `confirmPassword` fields match, given `@NotBlank`/`@Size` only see one field at a time?
+
+> **Answer:** Use a class-level custom constraint (cross-field validation): create an annotation like `@FieldsMatch(first="password", second="confirmPassword")` targeting `ElementType.TYPE`, with a `ConstraintValidator<FieldsMatch, YourDto>` whose `isValid()` receives the WHOLE DTO and compares both fields. Field-level annotations can't see sibling fields — that's exactly why class-level constraints exist.
+
+**F2.** What are Bean Validation **groups**, and when would you actually need them?
+
+> **Answer:** Groups let the SAME DTO apply DIFFERENT constraints depending on context — e.g., `id` might be `@Null` on create (client must not send one) but `@NotNull` on update. Define marker interfaces (`OnCreate`, `OnUpdate`), annotate constraints with `groups = OnCreate.class`, and trigger group-specific validation with Spring's `@Validated(OnCreate.class)` (plain `@Valid` has no group support).
+
+**F3.** What's the real difference between `@Valid` and `@Validated` beyond "one is Spring's"?
+
+> **Answer:** `@Valid` is the standard `jakarta.validation` annotation with NO group support. `@Validated` (Spring's own) supports validation groups AND, when placed at the CLASS level on a `@Service`/`@Component`, enables method-level validation of plain parameters (e.g., `@NotNull String name` on a service method, not just `@RequestBody` DTOs) via `MethodValidationPostProcessor`.
+
+**F4.** When would you deliberately drop from Spring Data JPA down to `JdbcTemplate`/raw SQL, even in a JPA-based project?
+
+> **Answer:** For (1) bulk operations where entity-by-entity dirty-checking is too slow, (2) complex reporting queries needing vendor-specific SQL (window functions, CTEs) that JPQL can't express, (3) extremely hot performance paths wanting to bypass persistence-context bookkeeping, or (4) DDL/admin tasks. `JdbcTemplate` trades manual `RowMapper` mapping and lost cascading/dirty-checking for direct SQL control and lower ORM overhead.
+
+**F5.** What is `hibernate.jdbc.batch_size`, and why does setting it NOT guarantee batched inserts for `GenerationType.IDENTITY` entities?
+
+> **Answer:** It groups multiple INSERT/UPDATE statements into one JDBC round-trip. But `GenerationType.IDENTITY` forces Hibernate to execute EACH insert individually to retrieve the DB-generated key immediately (needed for cascades) — this DISABLES batching entirely for identity-strategy entities, a common hidden performance gotcha. To actually batch, you typically need `GenerationType.SEQUENCE` with `hibernate.order_inserts=true` instead.
+
+**F6.** Production reports "connection pool exhausted" under load. What three root causes would you investigate first?
+
+> **Answer:** (1) Connection leaks — code paths (manual native queries, `@Transactional` methods calling slow external services while holding a connection) that don't release connections; (2) long-running transactions holding connections longer than necessary (e.g., wrapping an external HTTP call inside `@Transactional`); (3) genuinely undersized pool for real concurrent load, requiring scaling or query optimization. HikariCP's `spring.datasource.hikari.leak-detection-threshold` is the first tool to enable to catch #1.
+
+**F7.** Why is `@Email` alone (without `@NotBlank`) a common validation bug?
+
+> **Answer:** Per the Bean Validation spec convention, most constraints (including `@Email`) treat `null` as VALID by design, deferring null-checks to `@NotNull`/`@NotBlank`. A field with ONLY `@Email` happily accepts a missing/null email — you must combine it with `@NotBlank` to actually require a present, well-formed value.
+
+**F8.** How would you unit-test a custom `ConstraintValidator` WITHOUT starting any Spring context?
+
+> **Answer:** Instantiate a standalone validator via `Validation.buildDefaultValidatorFactory().getValidator()` (pure Jakarta Bean Validation API), call `validator.validate(dtoInstance)` in a plain JUnit test, and assert on the returned `Set<ConstraintViolation<T>>` — faster and more isolated than spinning up a Spring context just to test validation logic.
+
+````
