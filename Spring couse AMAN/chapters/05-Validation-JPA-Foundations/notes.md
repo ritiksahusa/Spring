@@ -351,6 +351,7 @@ When Spring Boot connects to a database, it doesn't open a new connection for ev
 - Visible in logs: `Added connection for database...` / `connection id: ...`
 - You can configure pool size: `spring.datasource.hikari.maximum-pool-size=10`
 
+read more : https://chatgpt.com/share/6a76ae74-e1e4-83e8-848f-e5b9b943e223
 ---
 
 ## 15. Summary — Key Concepts
