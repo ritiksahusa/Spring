@@ -280,6 +280,8 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
 
 > That's why `@Repository` is optional — Spring Data handles the bean lifecycle automatically.
 
+read more https://chatgpt.com/share/6a76aadd-b598-83e8-a075-782cd7853a22
+
 ---
 
 ## 12. Testing Repository Methods with @SpringBootTest
